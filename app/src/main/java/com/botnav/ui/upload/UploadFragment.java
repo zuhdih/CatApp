@@ -11,6 +11,8 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Base64;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,15 +34,32 @@ import com.botnav.R;
 import com.botnav.databinding.FragmentUploadBinding;
 import com.github.drjacky.imagepicker.ImagePicker;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
 public class UploadFragment extends Fragment {
 
     private UploadViewModel uploadViewModel;
     private FragmentUploadBinding binding;
+    private int serverResponseCode = 0;
 
     ImageView uploaded;
     Button btnOpen;
     Button btnUp;
     Bitmap upImage;
+    String upImageUri;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -49,17 +68,6 @@ public class UploadFragment extends Fragment {
 
         binding = FragmentUploadBinding.inflate(inflater, container, false);
         View root = binding.getRoot();
-
-        final TextView textView = binding.textUpload;
-        //final View view = inflater.inflate(R.layout.fragment_upload,container,false);
-
-
-        uploadViewModel.getText().observe(getViewLifecycleOwner(), new Observer<String>() {
-            @Override
-            public void onChanged(@Nullable String s) {
-                textView.setText(s);
-            }
-        });
 
         return root;
 
@@ -85,6 +93,19 @@ public class UploadFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 if(upImage != null){
+                    /*ByteArrayOutputStream baos0 = new ByteArrayOutputStream();
+
+                    upImage.compress(Bitmap.CompressFormat.JPEG, 88, baos0);
+                    byte[] imageBytes0 = baos0.toByteArray();*/
+                   //Base64.encodeToString(imageBytes0, Base64.DEFAULT);
+
+                    new Thread(new Runnable() {
+                        public void run() {
+
+                            uploadFile(upImageUri);
+
+                        }
+                    }).start();
 
                 }
                 else{
@@ -106,6 +127,7 @@ public class UploadFragment extends Fragment {
                     if (resultCode == RESULT_OK && data != null) {
                         Bitmap selectedImage = (Bitmap) data.getExtras().get("data");
                         upImage= selectedImage;
+                        Log.i("upImageUri", "upImageUri :"+upImageUri);
                         uploaded.setImageBitmap(selectedImage);
                     }
                     break;
@@ -119,14 +141,96 @@ public class UploadFragment extends Fragment {
                                 cursor.moveToFirst();
                                 int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
                                 String picturePath = cursor.getString(columnIndex);
+                                upImageUri = picturePath;
                                 upImage = BitmapFactory.decodeFile(picturePath);
                                 uploaded.setImageBitmap(upImage);
+                                Log.i("upImageUri", "upImageUri :"+upImageUri);
                                 cursor.close();
                             }
                         }                    }
                     break;
             }}}
 
+
+    public int uploadFile(String fileUri) {
+
+
+        HttpURLConnection conn = null;
+        DataOutputStream dos = null;
+        String lineEnd = "\r\n";
+        String twoHyphens = "--";
+        String boundary = "*****";
+        int bytesRead, bytesAvailable, bufferSize;
+        byte[] buffer;
+        int maxBufferSize = 1 * 1024 * 1024;
+
+        File sourceFile = new File(fileUri);
+
+        if (!sourceFile.isFile()){
+
+
+            Log.e("uploadFile", "::: Source File not exist :::"+ upImageUri);
+
+
+            return 0;
+
+        }
+        else
+        {
+            try {
+
+
+                String api_key = "8201b38d-3e24-4d39-94af-83120e72102b";
+                String[] splitUri = upImageUri.split("/");
+                String fileName = splitUri[splitUri.length-1].replaceAll("\\s","");
+                URL url = new URL("https://api.thecatapi.com/v1/images/upload");
+
+                OkHttpClient client = new OkHttpClient();
+
+                RequestBody requestBody = new MultipartBody.Builder()
+                        .addFormDataPart("file", fileName,
+                                RequestBody.create(new File(fileUri), MediaType.parse("image/jpg"))
+                        )
+                        .setType(MultipartBody.FORM)
+                        .build();
+
+                Request request = new Request.Builder()
+                        .url("https://api.thecatapi.com/v1/images/upload")
+                        .post(requestBody)
+                        .addHeader("content-type", "multipart/form-data;")
+                        .addHeader("x-api-key", "8201b38d-3e24-4d39-94af-83120e72102b")
+                        .build();
+
+                Response response = client.newCall(request).execute();
+
+                Log.i("uploadFile", "HTTP Response is : "
+                        + response.body().string());
+
+                if(serverResponseCode == 200){
+
+                    Log.i("respond", "::: 200 OK :::"+ upImageUri);
+                }
+
+
+            } catch (MalformedURLException ex) {
+
+
+                ex.printStackTrace();
+
+
+                Log.e("Upload file to server", "error: " + ex.getMessage(), ex);
+            } catch (Exception e) {
+
+
+                e.printStackTrace();
+
+                Log.e("Upload file to server Exception", "Exception : "  + e.getMessage(), e);
+            }
+
+            return serverResponseCode;
+
+        } // End else block
+    }
 
             @Override
     public void onDestroyView() {
